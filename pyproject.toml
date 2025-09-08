@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "payload-discovery"
+version = "0.1.0"
+description = "System for creating numbered instruction sequences for agent consumption"
+authors = [{name = "HEAVEN Team"}]
+readme = "README.md"
+requires-python = ">=3.9"
+
+dependencies = [
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "mcp>=1.0.0",
+    "fastmcp>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+payload-discovery-mcp = "payload_discovery.mcp_server_v2:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.mcp]
+name = "payload-discovery"
+description = "Numbered instruction sequences for systematic agent workflows"
