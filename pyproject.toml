@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "payload-discovery"
-version = "0.1.0"
+version = "0.1.1"
 description = "System for creating numbered instruction sequences for agent consumption"
 authors = [{name = "HEAVEN Team"}]
 readme = "README.md"
@@ -30,7 +30,7 @@ dev = [
 payload-discovery-mcp = "payload_discovery.mcp_server_v2:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["payload_discovery"]
 
 [tool.mcp]
 name = "payload-discovery"
