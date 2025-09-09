@@ -1,26 +1,32 @@
 # Payload Discovery
 
-A system for creating numbered instruction sequences that agents can systematically follow to complete complex workflows.
+A systematic agent learning framework that creates numbered instruction sequences and tracks progress through STARLOG integration.
 
 ## Overview
 
-Payload Discovery provides a structured approach to breaking down complex tasks into numbered, sequential instructions that AI agents can follow systematically. This enables consistent, repeatable workflows while maintaining flexibility for different use cases.
+Payload Discovery solves the problem of systematic agent learning by creating structured, sequential instruction files that agents consume in order. The system is stateless - all progress is tracked through STARLOG's debug diary, enabling agents to resume learning sessions seamlessly.
 
-## Key Features
+This package provides both a **core library** for creating instruction sequences and an **MCP server** for agent consumption.
 
-- 📋 **Numbered Sequences**: Create structured, ordered instruction lists
-- 🔄 **Systematic Workflows**: Agents can follow sequences step-by-step
-- 💾 **Persistent Storage**: Save and reload discovery sequences
-- 🛠 **MCP Integration**: Available as MCP server for agent consumption
-- 🎯 **Flexible Targeting**: Sequences can be customized for different contexts
+## Core Library Features
+
+- 📚 **PayloadDiscovery Models**: Pydantic models for creating structured instruction sequences
+- 🏗 **Filesystem Rendering**: Generate numbered instruction files from JSON configuration
+- ✅ **Validation System**: Dependency checking and sequence validation
+- 💾 **JSON Serialization**: Export/import instruction sequences as JSON
+
+## MCP Server Features  
+
+- 🛠 **Waypoint Navigation**: MCP tools for agents to traverse instruction sequences
+- 📊 **STARLOG Integration**: Progress tracking through debug diary (stateless)
+- 🔄 **Resume Capability**: Agents can restart and continue from last completed piece
+- 🎯 **Agent-Focused**: Designed for autonomous agent consumption
 
 ## Quick Start
 
 ### Installation
 
-```bash
-pip install payload-discovery
-```
+[Installation instructions pending PyPI publication]
 
 ### Basic Usage
 
