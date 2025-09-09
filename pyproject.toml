@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "payload-discovery"
-version = "0.1.1"
+version = "0.1.2"
 description = "System for creating numbered instruction sequences for agent consumption"
 authors = [{name = "HEAVEN Team"}]
 readme = "README.md"

@@ -7,6 +7,7 @@ Agents traverse waypoints in a curriculum, logging their progress like a starshi
 import logging
 import json
 import os
+import uuid
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
@@ -21,18 +22,7 @@ except ImportError as e:
 
 from .core import PayloadDiscovery, load_payload_discovery
 
-# Import STARLOG for diary integration
-try:
-    from starlog_mcp.starlog import Starlog
-    from starlog_mcp.models import DebugDiaryEntry
-    STARLOG_AVAILABLE = True
-except ImportError as e:
-    logger.warning("STARLOG not available - diary tracking disabled", exc_info=True)
-    STARLOG_AVAILABLE = False
-    
-    class DebugDiaryEntry:
-        def __init__(self, content: str, **kwargs):
-            self.content = content
+# No STARLOG imports needed - using direct registry access
 
 app = FastMCP("Waypoint")
 logger.info("Created Waypoint FastMCP application")
@@ -104,7 +94,15 @@ def _parse_temp_file(domain: str, version: str) -> List[str]:
         with open(temp_file, 'r') as f:
             content = f.read().strip()
         
-        # For temp file parsing, we need to extract filename from the content directly
+        # Extract step count from "Completed step X/Y" format
+        import re
+        step_match = re.search(r"Completed step (\d+)/(\d+)", content)
+        if step_match:
+            completed_step = int(step_match.group(1))
+            # Return a list with the right number of dummy filenames to get the count right
+            return [f"step_{i}.md" for i in range(1, completed_step + 1)]
+        
+        # Fallback to old filename extraction if no step count found
         filename = _extract_completed_filename(content, "")
         return [filename] if filename else []
         
@@ -114,41 +112,81 @@ def _parse_temp_file(domain: str, version: str) -> List[str]:
 
 
 def _parse_diary_entries(starlog_path: str, domain: str, version: str) -> List[str]:
-    """Parse debug diary to find completed pieces using STARLOG registry or temp file."""
-    if STARLOG_AVAILABLE:
-        try:
-            starlog = Starlog()
-            project_name = starlog._get_project_name_from_path(starlog_path)
-            diary_data = starlog._get_registry_data(project_name, "debug_diary")
-            return _extract_completed_filenames_from_registry_data(diary_data, "")
-        except Exception as e:
-            logger.error(f"Error parsing STARLOG diary entries: {e}", exc_info=True)
-    
-    # Fallback to temp file
+    """Parse temp file to find completed pieces."""
+    # Always use temp file for waypoint state tracking
     return _parse_temp_file(domain, version)
 
 
-def _write_diary_entry(starlog_path: str, content: str, insights: Optional[str] = None):
-    """Write an entry to the debug diary or fallback temp file."""
-    if STARLOG_AVAILABLE:
-        try:
-            starlog = Starlog()
-            project_name = starlog._get_project_name_from_path(starlog_path)
-            entry = DebugDiaryEntry(content=content, insights=insights)
-            starlog._save_debug_diary_entry(project_name, entry)
-            logger.debug(f"Wrote diary entry: {content[:50]}...")
-            return
-        except Exception as e:
-            logger.error(f"Error writing STARLOG diary entry: {e}", exc_info=True)
-    
-    # Fallback to temp file (overwrite mode - only keeps latest entry)
-    temp_file = "/tmp/waypoint_state.temp"
+def _write_to_temp_json(state_data: dict):
+    """Write state data to temp JSON file for easy parsing."""
+    temp_file = "/tmp/waypoint_state.json"
     try:
         with open(temp_file, 'w') as f:
-            f.write(content + "\n")
-        logger.debug(f"Wrote to temp file: {content[:50]}...")
+            json.dump(state_data, f, indent=2)
+        logger.debug(f"Wrote to temp JSON: {state_data}")
     except Exception as e:
-        logger.error(f"Error writing temp file: {e}", exc_info=True)
+        logger.error(f"Error writing temp JSON: {e}", exc_info=True)
+
+def _read_temp_json() -> dict:
+    """Read state data from temp JSON file."""
+    temp_file = "/tmp/waypoint_state.json"
+    try:
+        if not os.path.exists(temp_file):
+            return {}
+        with open(temp_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error reading temp JSON: {e}", exc_info=True)
+        return {}
+
+def _write_diary_entry(starlog_path: str, content: str, insights: Optional[str] = None):
+    """Write an entry to the starlog debug diary by directly modifying registry JSON."""
+    if not starlog_path:
+        return
+        
+    try:
+        # Get HEAVEN_DATA_DIR and reconstruct registry path
+        heaven_data_dir = os.environ.get('HEAVEN_DATA_DIR')
+        if not heaven_data_dir:
+            logger.warning("HEAVEN_DATA_DIR not set, cannot write to starlog debug diary")
+            return
+            
+        # Extract project name from starlog_path
+        project_name = Path(starlog_path).name
+        registry_path = f"{heaven_data_dir}/registry/{project_name}_debug_diary_registry.json"
+        
+        # Read existing registry
+        registry_data = {}
+        if os.path.exists(registry_path):
+            with open(registry_path, 'r') as f:
+                registry_data = json.load(f)
+        
+        # Create entry mimicking DebugDiaryEntry structure
+        entry_id = f"diary_{uuid.uuid4().hex[:8]}"
+        entry = {
+            "id": entry_id,
+            "timestamp": datetime.now().isoformat(),
+            "content": content,
+            "insights": insights,
+            "in_file": None,
+            "bug_report": False,
+            "bug_fix": False,
+            "issue_id": None,
+            "from_github": False
+        }
+        
+        # Add entry to registry
+        registry_data[entry_id] = entry
+        
+        # Write back to registry
+        with open(registry_path, 'w') as f:
+            json.dump(registry_data, f, indent=2)
+            
+        logger.debug(f"Wrote diary entry directly to registry: {content[:50]}...")
+        return
+        
+    except Exception as e:
+        logger.error(f"Error writing STARLOG diary entry directly: {e}", exc_info=True)
 
 
 def _map_filenames_to_sequence_numbers(pd: PayloadDiscovery, completed_filenames: List[str]) -> List[int]:
@@ -176,7 +214,30 @@ def _count_total_pieces(pd: PayloadDiscovery) -> int:
 
 
 def _get_next_sequence_number(starlog_path: str, pd: PayloadDiscovery) -> Optional[int]:
-    """Find the next sequence number to serve based on STARLOG diary."""
+    """Find the next sequence number to serve based on JSON state."""
+    # Try JSON state first
+    state_data = _read_temp_json()
+    if state_data and "last_served_sequence" in state_data:
+        last_served = state_data["last_served_sequence"]
+        
+        # Find all pieces in sequence order
+        all_pieces = []
+        for piece in pd.root_files:
+            all_pieces.append(piece)
+        for pieces in pd.directories.values():
+            all_pieces.extend(pieces)
+        
+        # Sort by sequence number
+        all_pieces.sort(key=lambda p: p.sequence_number)
+        
+        # Find next sequence after last served
+        for piece in all_pieces:
+            if piece.sequence_number > last_served:
+                return piece.sequence_number
+        
+        return None  # All complete
+    
+    # Fallback to diary parsing if no JSON state
     completed_filenames = _parse_diary_entries(starlog_path, pd.domain, pd.version)
     completed_numbers = set(_map_filenames_to_sequence_numbers(pd, completed_filenames))
     
@@ -236,15 +297,36 @@ def start_waypoint_journey(config_path: str, starlog_path: str, notes: str = "")
         _active_discoveries[starlog_path] = pd
         
         total_pieces = _count_total_pieces(pd)
+        config_filename = Path(config_path).stem
+        
+        # Write START message
         _write_waypoint_log(
             starlog_path,
             pd,
             "START",
             step_info=f"Journey initialized with {total_pieces} waypoints",
-            notes=notes or "Beginning navigation sequence"
+            notes=notes or "Beginning navigation sequence",
+            filename=config_filename
         )
         
-        return f"✅ Waypoint Journey Started: {pd.domain} {pd.version}\nTotal waypoints: {total_pieces}\nCaptain's Log tracking in: {starlog_path}"
+        # Check if previous journey ended, allow restart
+        state_data = _read_temp_json()
+        if state_data.get("status") == "END":
+            # Clear END status to allow restart
+            temp_file = "/tmp/waypoint_state.json"
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            logger.debug("Cleared END status, allowing restart")
+        
+        # Serve first waypoint
+        first_sequence = _get_next_sequence_number(starlog_path, pd)
+        if first_sequence is not None:
+            piece = _get_piece_by_sequence(pd, first_sequence)
+            if piece:
+                _write_completion_entry(starlog_path, pd, piece, 1, notes, config_filename)
+                return piece.content
+        
+        return f"❌ Error: No waypoints found in {pd.domain}"
         
     except Exception as e:
         logger.error(f"Error starting discovery: {e}", exc_info=True)
@@ -263,11 +345,27 @@ def _write_waypoint_log(starlog_path: str, pd: PayloadDiscovery, status: str, st
     )
     _write_diary_entry(starlog_path, log_entry)
 
-def _write_completion_entry(starlog_path: str, pd: PayloadDiscovery, piece, completed_count: int, notes: str = ""):
-    """Write completion entry to STARLOG diary."""
+def _write_completion_entry(starlog_path: str, pd: PayloadDiscovery, piece, completed_count: int, notes: str = "", config_filename: str = "workflow"):
+    """Write completion entry to STARLOG diary and update JSON state."""
     total = _count_total_pieces(pd)
-    step_info = f"Completed step {completed_count}/{total}"
-    _write_waypoint_log(starlog_path, pd, step_info, notes=notes, filename=piece.filename)
+    step_info = f"Completed step {completed_count}/{total} - {piece.filename} served"
+    
+    # Always write JSON state for waypoint navigation
+    state_data = {
+        "domain": pd.domain,
+        "version": pd.version,
+        "workflow": config_filename,
+        "last_served_sequence": piece.sequence_number,
+        "total_waypoints": total,
+        "last_served_file": piece.filename,
+        "completed_count": completed_count,
+        "status": "END" if completed_count >= total else "IN_PROGRESS"
+    }
+    _write_to_temp_json(state_data)
+    
+    # Additionally write to starlog debug diary if available
+    if starlog_path:
+        _write_waypoint_log(starlog_path, pd, step_info, notes=notes, filename=config_filename)
 
 def _write_ended_entry(starlog_path: str, pd: PayloadDiscovery, notes: str = ""):
     """Write ENDED entry to STARLOG diary."""
@@ -296,8 +394,7 @@ def _get_next_prompt_internal(starlog_path: str) -> str:
     if not piece:
         return f"❌ Error: Could not find piece for sequence {next_sequence}"
     
-    completed_filenames = _parse_diary_entries(starlog_path, pd.domain, pd.version)
-    _write_completion_entry(starlog_path, pd, piece, len(completed_filenames) + 1)
+    _write_completion_entry(starlog_path, pd, piece, piece.sequence_number)
     
     return piece.content
 
@@ -317,8 +414,7 @@ def _get_next_prompt_with_notes(starlog_path: str, notes: str = "") -> str:
     if not piece:
         return f"❌ Error: Could not find waypoint for sequence {next_sequence}"
     
-    completed_filenames = _parse_diary_entries(starlog_path, pd.domain, pd.version)
-    _write_completion_entry(starlog_path, pd, piece, len(completed_filenames) + 1, notes)
+    _write_completion_entry(starlog_path, pd, piece, piece.sequence_number, notes)
     
     return piece.content
 
