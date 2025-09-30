@@ -1,4 +1,6 @@
-# Payload Discovery
+[![Part of STARSYSTEM](https://img.shields.io/badge/Part%20of-STARSYSTEM-blue)](https://github.com/sancovp/starsystem-metarepo)
+
+# Payload Discovery & Waypoint MCP
 
 A systematic agent learning framework that creates numbered instruction sequences and tracks progress through STARLOG integration.
 
@@ -15,7 +17,7 @@ This package provides both a **core library** for creating instruction sequences
 - ✅ **Validation System**: Dependency checking and sequence validation
 - 💾 **JSON Serialization**: Export/import instruction sequences as JSON
 
-## MCP Server Features  
+## Waypoint MCP Server Features  
 
 - 🛠 **Waypoint Navigation**: MCP tools for agents to traverse instruction sequences
 - 📊 **STARLOG Integration**: Progress tracking through debug diary (stateless)
