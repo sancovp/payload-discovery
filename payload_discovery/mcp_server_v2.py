@@ -643,8 +643,10 @@ def _get_next_prompt_with_notes(starlog_path: str, notes: str = "") -> str:
     state_data = _read_temp_json(project_name)
     config_path = state_data.get("config_path") if state_data else None
     _write_completion_entry(starlog_path, config_path, pd, piece, piece.sequence_number, notes)
-    
-    return piece.content
+
+    autopoiesis_reminder = "\n\n---\n**Autopoiesis**: Consider what promises you need to make for this step. Use `be_autopoietic(\"promise\")` to commit to completing this step before moving to the next."
+
+    return piece.content + autopoiesis_reminder
 
 @app.tool()
 def navigate_to_next_waypoint(starlog_path: str, notes: str = "") -> str:
@@ -730,6 +732,58 @@ def abort_waypoint_journey(starlog_path: str, notes: str = "") -> str:
     except Exception as e:
         logger.error(f"Error aborting waypoint journey: {e}", exc_info=True)
         return f"🪂 Error: {str(e)}"
+
+
+@app.tool()
+def get_current_step_content(starlog_path: str) -> str:
+    """
+    Get current waypoint step content WITHOUT advancing to next step.
+
+    This is used by Super-Ralph Stop hook to inject current step context
+    without changing journey progress. Safe to call repeatedly.
+
+    Args:
+        starlog_path: STARLOG project path with active waypoint journey
+
+    Returns:
+        Current step content, or error message if no active journey
+    """
+    logger.debug(f"get_current_step_content: starlog={starlog_path}")
+
+    try:
+        pd = _load_payload_discovery_from_state(starlog_path)
+        if not pd:
+            return "No active waypoint journey."
+
+        # Get current sequence from JSON state
+        project_name = Path(starlog_path).name if starlog_path else None
+        state_data = _read_temp_json(project_name)
+
+        if not state_data:
+            return "No waypoint state found."
+
+        last_served = state_data.get("last_served_sequence")
+        if last_served is None:
+            return "No step has been served yet."
+
+        # Get the piece for the last served sequence (current step)
+        piece = _get_piece_by_sequence(pd, last_served)
+        if not piece:
+            return f"Could not find content for step {last_served}"
+
+        # Return content with metadata
+        total = state_data.get("total_waypoints", _count_total_pieces(pd))
+        completed = state_data.get("completed_count", last_served)
+
+        return (
+            f"📋 Step {completed}/{total}: {piece.filename}\n"
+            f"---\n"
+            f"{piece.content}"
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting current step content: {e}", exc_info=True)
+        return f"Error: {str(e)}"
 
 
 @app.tool()
